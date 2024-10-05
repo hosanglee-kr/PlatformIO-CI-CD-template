@@ -1,4 +1,4 @@
-name: Firmware Release
+name: Firmware Release 2
 
 on:
   release:
@@ -29,26 +29,26 @@ jobs:
       - name: Install PlatformIO Core
         run: pip install --upgrade platformio
 
-      - name: Get Release Version
-        id: get_version
+      - name: Get Environment List from platformio.ini
+        id: get_envs
         run: |
-          VERSION=${GITHUB_REF##*/}  # Extract the tag name from GITHUB_REF
-          echo "Version: $VERSION"
-          echo "version=$VERSION" >> $GITHUB_ENV  # Set the version as an environment variable
+          ENV_LIST=$(grep -oP '(?<=\[env:).*?(?=\])' platformio.ini | tr '\n' ',')  # Join with commas
+          ENV_LIST=${ENV_LIST%,}  # Remove the trailing comma
+          echo "ENV_LIST=$ENV_LIST" >> $GITHUB_ENV  # Set the GITHUB_ENV variable
+          echo "Available environments: $ENV_LIST"  # Print the environments for logging
 
-      - name: Run PlatformIO
-        env:
-          VERSION: ${{ env.version }}  # Use the version from the environment variable
-        run: pio run
-
-      - name: Build File System
-        env:
-          VERSION: ${{ env.version }}  # Use the version from the environment variable
-        run: pio run --target buildfs  # Add this line to build the filesystem
-        continue-on-error: true  # 오류가 발생해도 계속 실행
+      - name: Build and Build Filesystem for Each Environment
+        run: |
+          IFS=',' read -r -a env_array <<< "${{ env.ENV_LIST }}"
+          for ENV in "${env_array[@]}"; do
+            echo "Building environment: $ENV"
+            pio run -e "$ENV" --disable-auto-clean || echo "Build failed for environment: $ENV, continuing..."
+            echo "Building filesystem for environment: $ENV"
+            pio run -e "$ENV" --target buildfs --disable-auto-clean || echo "Filesystem build failed for environment: $ENV, continuing..."
+          done
 
       - name: Install rename
-        run: sudo apt-get update && sudo apt-get install -y rename  # rename 패키지 설치
+        run: sudo apt-get update && sudo apt-get install -y rename
 
       - name: Rename bin files
         run: |
@@ -57,19 +57,9 @@ jobs:
           ls -la
           rename 's/.pio-build-//' ./.pio-build-*.bin     
           ls -la
-        
-          # rename 's/.pio-build-//' ./*.bin
-        #  echo "Renaming bin files with the environment name"
-        #  find .pio/build/*/*.bin -exec rename 's:/:-:g' {} \;
-        #  ls -l
 
       - name: Create toDeploy directory
         run: mkdir toDeploy
-
-      #- name: Remove .pio-build- prefix from bin files
-      #  run: |
-      #    rename 's/.pio-build-//' ./*.bin
-      #    ls -l
 
       - name: Replace space with underscore in folder names
         run: |
@@ -79,14 +69,13 @@ jobs:
       - name: Zip libraries per board
         run: |
           echo "Zipping libraries per board"
-          if [ -d lib ]; then  # Check if the lib directory exists
+          if [ -d lib ]; then
             for dir in lib/*/; do
-              if [ -d "$dir" ]; then  # Check if the subdirectory exists
+              if [ -d "$dir" ]; then
                 zip -r "${dir%/}-libraries.zip" "$dir"
                 echo "Created zip: ${dir%/}-libraries.zip"
               fi
             done
-            # Ignore if no zip files were created, just move on
             if compgen -G "lib/*.zip" > /dev/null; then
               mv lib/*.zip toDeploy
             else
@@ -102,15 +91,13 @@ jobs:
           echo "Removing unnecessary binaries and zips"
           rm -f *-all*.bin *-test*.bin *-test*.zip
           ls -l
+
       - name: Zip source code
         run: |
           echo "Zipping source code"
-          zip -r Sources.zip src
+          zip -r Sources.zip espem
           mv Sources.zip toDeploy
-          
-          echo "Current directory contents:"
           ls -l
-          # Check if .bin files exist before moving
           if ls *.bin 1> /dev/null 2>&1; then
             mv *.bin toDeploy
           else
@@ -125,10 +112,11 @@ jobs:
         with:
           name: release-assets
           path: toDeploy/**
-          
+
       - name: Finalize Release
         uses: softprops/action-gh-release@v1
         with:
           files: toDeploy/**
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
