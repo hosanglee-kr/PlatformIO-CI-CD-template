@@ -4,6 +4,19 @@
 [![GitHub release](https://img.shields.io/github/release/256dpi/arduino-mqtt.svg)](https://github.com/hosanglee-kr/PlatformIO-CI-CD-template/releases)
 
 
+<script>
+  fetch('https://api.github.com/repos/<username>/<repository>/releases/latest')
+    .then(response => response.json())
+    .then(data => {
+      const releaseTag = data.tag_name; // 마지막 릴리스 태그
+      document.getElementById('latest-release').innerText = `Latest Release: ${releaseTag}`;
+    })
+    .catch(error => console.error('Error fetching release data:', error));
+</script>
+
+<div id="latest-release"></div>
+
+
 This repository template contains all the necessary files to:
 
 1. Do PlatformIO development with VSCode and remote development containers.
